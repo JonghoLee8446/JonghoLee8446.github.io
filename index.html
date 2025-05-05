@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>길찾기 게임</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h2 {
+      color: #333;
+    }
+
+    #map-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    #map {
+      display: grid;
+      grid-template-columns: repeat(6, 60px);
+      grid-template-rows: repeat(6, 60px);
+      gap: 2px;
+    }
+
+    .cell {
+      width: 60px;
+      height: 60px;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      font-size: 14px;
+      box-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .goal-cell {
+      background-color: #fffae6;
+      border: 2px solid #ffaa00;
+    }
+
+    .controls {
+      margin-top: 20px;
+    }
+
+    .controls button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .player-icon {
+      display: inline-block;
+      font-size: 24px;
+      transition: transform 0.2s ease-in-out;
+    }
+
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #0055aa;
+    }
+
+    #clear-count {
+      margin-top: 10px;
+      font-size: 18px;
+      color: green;
+    }
+
+    #reset-button {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      padding: 8px 16px;
+      font-size: 14px;
+    }
+
+    #session-info {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <button id="reset-button" onclick="resetGame()">🔄 리셋</button>
+  <h2>길찾기 게임</h2>
+  <div id="session-info">세션 ID: <span id="session-id"></span></div>
+  <div id="clear-count">클리어 횟수: 0</div>
+  <div id="map-container">
+    <div id="map"></div>
+  </div>
+  <div class="controls">
+    <button onclick="speakAndThen(goStraight, 'Go straight')">Go Straight</button>
+    <button onclick="speakAndThen(turnLeft, 'Turn left')">Turn Left</button>
+    <button onclick="speakAndThen(turnRight, 'Turn right')">Turn Right</button>
+  </div>
+  <div id="status"></div>
+
+  <script>
+    const sessionId = crypto.randomUUID();
+    document.getElementById('session-id').textContent = sessionId;
+
+    const size = 6;
+    const mapDiv = document.getElementById('map');
+    const statusDiv = document.getElementById('status');
+    const clearCountDiv = document.getElementById('clear-count');
+
+    const buildingEmojis = {
+      'hospital': '🏥',
+      'school': '🏫',
+      'library': '📚',
+      'museum': '🏛️',
+      'park': '🏞️',
+      'police': '🚓',
+      'post': '📮',
+      'restaurant': '🍝',
+      'fire': '🚒'
+    };
+
+    const impassables = ['fire', 'hospital', 'library', 'museum', 'park', 'police', 'post', 'restaurant'];
+
+    let map = [];
+    let player = { x: 0, y: 0, dir: 0 };
+    let goal = { x: 5, y: 5 };
+    let clearCount = 0;
+
+    function createMap() {
+      map = Array.from({ length: size }, () =>
+        Array.from({ length: size }, () => null)
+      );
+
+      const buildings = ['hospital', 'library', 'museum', 'park', 'police', 'post', 'restaurant', 'fire'];
+      const shuffled = buildings.sort(() => 0.5 - Math.random());
+
+      let placed = 0;
+      for (let i = 0; i < size && placed < shuffled.length; i++) {
+        for (let j = 0; j < size && placed < shuffled.length; j++) {
+          if ((i === player.y && j === player.x) || (i === goal.y && j === goal.x)) continue;
+          if (Math.random() < 0.25) {
+            map[i][j] = shuffled[placed++];
+          }
+        }
+      }
+    }
+
+    function drawMap() {
+      mapDiv.innerHTML = '';
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+
+          const cellContent = document.createElement('div');
+          cellContent.className = 'cell-content';
+
+          if (x === player.x && y === player.y) {
+            const icon = document.createElement('span');
+            icon.textContent = '🚶';
+            icon.className = 'player-icon';
+            icon.style.transform = `rotate(${player.dir * 90}deg)`;
+            cellContent.appendChild(icon);
+            cell.appendChild(cellContent);
+          } else if (x === goal.x && y === goal.y) {
+            cell.classList.add('goal-cell');
+            cellContent.innerHTML = `<div>🏫</div><small>school</small>`;
+            cell.appendChild(cellContent);
+          } else {
+            const value = map[y][x];
+            if (value && buildingEmojis[value]) {
+              cellContent.innerHTML = `<div>${buildingEmojis[value]}</div><small>${getBuildingName(value)}</small>`;
+              cell.appendChild(cellContent);
+            }
+          }
+
+          mapDiv.appendChild(cell);
+        }
+      }
+    }
+
+    function getBuildingName(type) {
+      const names = {
+        'hospital': 'hospital',
+        'library': 'library',
+        'museum': 'museum',
+        'park': 'park',
+        'police': 'police station',
+        'post': 'post office',
+        'restaurant': 'restaurant',
+        'fire': 'fire station'
+      };
+      return names[type] || '';
+    }
+
+    function speakAndThen(action, text) {
+      const utter = new SpeechSynthesisUtterance(text);
+      window.speechSynthesis.speak(utter);
+      action();
+    }
+
+    function turnLeft() {
+      player.dir = (player.dir + 3) % 4;
+      drawMap();
+    }
+
+    function turnRight() {
+      player.dir = (player.dir + 1) % 4;
+      drawMap();
+    }
+
+    function goStraight() {
+      let dx = [0, 1, 0, -1][player.dir];
+      let dy = [-1, 0, 1, 0][player.dir];
+      let nx = player.x + dx;
+      let ny = player.y + dy;
+      if (
+        nx >= 0 && nx < size && ny >= 0 && ny < size &&
+        !impassables.includes(map[ny][nx])
+      ) {
+        player.x = nx;
+        player.y = ny;
+        checkWin();
+      }
+      drawMap();
+    }
+
+    function checkWin() {
+      if (player.x === goal.x && player.y === goal.y) {
+        clearCount++;
+        clearCountDiv.textContent = `클리어 횟수: ${clearCount}`;
+        statusDiv.textContent = '🎉 You have arrived at the school! Restarting...';
+        setTimeout(resetGame, 2000);
+      } else if (!isReachable()) {
+        statusDiv.textContent = '❌ Impossible! Restarting...';
+        setTimeout(resetGame, 1500);
+      }
+    }
+
+    function isReachable() {
+      const visited = Array.from({ length: size }, () => Array(size).fill(false));
+      const queue = [[player.x, player.y]];
+      visited[player.y][player.x] = true;
+
+      while (queue.length) {
+        const [x, y] = queue.shift();
+        if (x === goal.x && y === goal.y) return true;
+        for (let [dx, dy] of [[0,1],[1,0],[0,-1],[-1,0]]) {
+          const nx = x + dx, ny = y + dy;
+          if (
+            nx >= 0 && nx < size && ny >= 0 && ny < size &&
+            !visited[ny][nx] &&
+            !impassables.includes(map[ny][nx])
+          ) {
+            visited[ny][nx] = true;
+            queue.push([nx, ny]);
+          }
+        }
+      }
+      return false;
+    }
+
+    function resetGame() {
+      do {
+        player = {
+          x: Math.floor(Math.random() * size),
+          y: Math.floor(Math.random() * size),
+          dir: 0
+        };
+        do {
+          goal = {
+            x: Math.floor(Math.random() * size),
+            y: Math.floor(Math.random() * size)
+          };
+        } while ((goal.x === player.x && goal.y === player.y) || Math.abs(goal.x - player.x) + Math.abs(goal.y - player.y) < 4);
+
+        createMap();
+      } while (!isReachable());
+
+      drawMap();
+      statusDiv.textContent = '';
+    }
+
+    resetGame();
+  </script>
+</body>
+</html>
